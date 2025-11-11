@@ -1,14 +1,65 @@
 pipeline {
-  agent any
-  options {
-    buildDiscarder(logRotator(numToKeepStr: '5'))
-  }
-  stages {
-    stage('Build') {
-      steps {
-        sh './mvnw clean install site surefire-report:report'
-        sh 'tree'
-      }
+    agent any
+
+    environment {
+        SONAR_HOME = tool "SonarQube"
     }
-  }
+
+    stages {
+        stage("Checkout Code") {
+            steps {
+                git url: "https://github.com/LondheShubham153/wanderlust.git", branch: "devops"
+            }
+        }
+
+        stage("SonarQube Analysis") {
+            steps {
+                withSonarQubeEnv("sq1") {
+                    sh "$SONAR_HOME/bin/sonar-scanner -Dsonar.projectName=wanderlust -Dsonar.projectKey=wanderlust"
+                }
+            }
+        }
+
+        stage("Install Node Dependencies") {
+            steps {
+                sh """
+                    echo "Installing Node dependencies..."
+                    pushd frontend
+                    npm install || true
+                    popd
+                    pushd backend
+                    npm install || true
+                    popd
+                """
+            }
+        }
+
+        stage("OWASP Dependency Check") {
+            steps {
+                dependencyCheck additionalArguments: '--scan ./', odcInstallation: 'dc'
+                dependencyCheckPublisher pattern: '**/dependency-check-report.xml'
+            }
+        }
+
+        stage("Sonar Quality Gate") {
+            steps {
+                timeout(time: 2, unit: "MINUTES") {
+                    waitForQualityGate abortPipeline: false
+                }
+            }
+        }
+
+        stage("Trivy File System Scan") {
+            steps {
+                sh "trivy fs --format table -o trivy-fs-report.html ."
+            }
+        }
+    }
+
+    post {
+        always {
+            archiveArtifacts artifacts: 'trivy-fs-report.html', fingerprint: true
+            echo "Pipeline terminé !"
+        }
+    }
 }
