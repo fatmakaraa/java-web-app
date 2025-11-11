@@ -8,7 +8,87 @@ pipeline {
     stages {
         stage("Checkout Code") {
             steps {
+                git url: "https://github.com/LondheShubhapipeline {
+    agent any
+
+    // Tools installed and configured in Jenkins
+    tools {
+        nodejs "Node 20"           // Name of NodeJS installation in Jenkins
+        sonarScanner "SonarScanner" // Name of SonarScanner installation in Jenkins
+    }
+
+    environment {
+        SONAR_PROJECT_NAME = "wanderlust"
+        SONAR_PROJECT_KEY  = "wanderlust"
+    }
+
+    stages {
+        stage("Checkout Code") {
+            steps {
                 git url: "https://github.com/LondheShubham153/wanderlust.git", branch: "devops"
+            }
+        }
+
+        stage("Install Node Dependencies") {
+            steps {
+                // Use bash explicitly and avoid pushd/popd
+                sh '''
+                #!/bin/bash
+                echo "Installing frontend dependencies..."
+                if [ -d frontend ]; then
+                    cd frontend
+                    npm install
+                    cd ..
+                fi
+
+                echo "Installing backend dependencies..."
+                if [ -d backend ]; then
+                    cd backend
+                    npm install
+                    cd ..
+                fi
+                '''
+            }
+        }
+
+        stage("SonarQube Analysis") {
+            steps {
+                withSonarQubeEnv("sq1") {
+                    sh "sonar-scanner -Dsonar.projectName=$SONAR_PROJECT_NAME -Dsonar.projectKey=$SONAR_PROJECT_KEY"
+                }
+            }
+        }
+
+        stage("OWASP Dependency Check") {
+            steps {
+                dependencyCheck additionalArguments: '--scan ./', odcInstallation: 'dc'
+                dependencyCheckPublisher pattern: '**/dependency-check-report.xml'
+            }
+        }
+
+        stage("Sonar Quality Gate") {
+            steps {
+                timeout(time: 2, unit: "MINUTES") {
+                    waitForQualityGate abortPipeline: false
+                }
+            }
+        }
+
+        stage("Trivy File System Scan") {
+            steps {
+                sh "trivy fs --format table -o trivy-fs-report.html ."
+            }
+        }
+    }
+
+    post {
+        always {
+            archiveArtifacts artifacts: 'trivy-fs-report.html', fingerprint: true
+            echo "Pipeline terminé !"
+        }
+    }
+}
+m153/wanderlust.git", branch: "devops"
             }
         }
 
